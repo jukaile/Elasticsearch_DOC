@@ -80,7 +80,7 @@ get和post都可以用来执行带有请求体的搜索
       ```json
       {
           "_source":false,
-          "_source":[字段列表],
+          "_source":["字段列表"],
           "query":{}
       }
       ```
