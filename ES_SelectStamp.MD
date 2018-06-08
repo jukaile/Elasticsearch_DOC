@@ -3,7 +3,7 @@
 
 --------
 
-***作者：jukaile***
+***作者：jukaile***  
 ***时间：2018-06-04***
 
 --------
@@ -18,13 +18,18 @@ ElasticSearch(以下简称`ES`)的查询语法规则为嵌套式查询
 * 如果把整个查询语句全部抽象为嵌套的话，那描述查询的位置的http地址即为最外层
     查询方法为：  
     **<center><VERB> \<PROTOCOL>://\<HOST>:\<PORT>/\<PATH>?\<QUERY_STRING></center>**
+    
     被<>标记的部件的解释：
+    
     |VERB|PROTOCOL|HOST|PORT|PATH|QUERY_STRING|
     |-|-|-|-|-|-|
     |HTTP方法、谓词|HTTP、HTTPS|ES节点地址|运行ES WEB服务的端口|ES查询API 可以连用 用"/"连接|可选的查询字符串参数|
+    
     ES使用http链接来指定查询的索引和查询类型，对应mongodb中的`db`与`collection`
+    
   ***注意***：
   * ES支持在HTTP请求中直接编辑查询语句，通过API直接查询，但因为请求的表达能力有限，因此除了简单询，通常不会在HTTP请求中，这里给出一个查询例子：
+  
     **<center>```HTTP://localhost:9200/jukaile/doc/_search```</center>**
   * 通常在生产中使用的查询为是在给出的http中加入body，通过传值的方式进行查询
 
@@ -75,7 +80,7 @@ get和post都可以用来执行带有请求体的搜索
       ```json
       {
           "_source":false,
-          //"_source":[字段列表],
+          "_source":[字段列表],
           "query":{}
       }
       ```
@@ -83,7 +88,7 @@ get和post都可以用来执行带有请求体的搜索
       ```json
       {
           "_source":"obj.*",
-        //"_source":["obj1.*","obj2.*"]
+          "_source":["obj1.*","obj2.*"],
           "query":{}
       }
       ```
@@ -98,13 +103,16 @@ get和post都可以用来执行带有请求体的搜索
       }
       ```
 2. **数据处理API**
+
     |Name|Description|
     |:-:|:-:|
     |`query`|查询|
     |`sort`|排序|
     |`aggregations`|聚合|
+    
     数据处理最重要和最常用的三个API就是上表中的API，下面将会对每个API进行详细说明
     * `query`：查询API
+    
       先给出一个例子：
       ```json
       {
@@ -114,12 +122,16 @@ get和post都可以用来执行带有请求体的搜索
       }
       ```
       上面的例子将返回所有数据
+      
       对于ES而言，查询有全文搜索和精确查询之分
+      
       全文搜索：
       * ES是基于倒排索引实现的。为了提高查询速度，在数据进入ES时，必须要对其进行索引化（既为切词、归档过程），因此对于全文搜索，其隐含条件就是模糊查询
       * 由于全文搜索是模糊搜索，为了衡量文档的匹配程度，ES给每个词对应的文档赋予一个评分，放在查询结果的`_score`中
-      对于不同的查询，query中几乎都有对应的API以实现其功能
+      
+      对于不同的查询，`query`中几乎都有对应的API以实现其功能
       * 全文搜索API
+      
         |Name|Description|
         |:-:|:-:|
         |`match_all`|查询所有|
