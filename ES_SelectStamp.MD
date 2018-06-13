@@ -146,20 +146,344 @@ get和post都可以用来执行带有请求体的搜索
       * 筛选器可以相互嵌套，也可以同层连用：
         * 在相互嵌套的情况下，筛选器之间的逻辑是递进逻辑；
         * 在同层连用情况下，筛选器之间逻辑类似管道逻辑，数据先由前面的筛选器筛选，而后被后面的筛选器筛选。
-    * 例子：
-      ```json
-      {
-          "query": {
-              "bool": {
-                  "must": [
-                      {"match": { "title": "Search"}},
-                      {"match": { "content": "Elasticsearch"}}
-                  ],
-                  "filter": [
-                      {"term":  { "status": "published"}},
-                      {"range": { "publish_date": { "gte": "2015-01-01"}}}
-                  ]
+      * 例子：
+        ```json
+        {
+            "query": {
+                "bool": {
+                    "must": [
+                        {"match": { "title": "Search"}},
+                        {"match": { "content": "Elasticsearch"}}
+                    ],
+                    "filter": [
+                        {"term":  { "status": "published"}},
+                        {"range": { "publish_date": { "gte": "2015-01-01"}}}
+                    ]
+                }
+            }
+        }
+        ```
+    * `sort` 排序API
+      `sort`关键字是ES的排序API，其针对的是由`query`搜索或`aggs`聚合执行后拿到的数据。在没有给出`query`或`aggs`的情况下，默认对全文根据条件排序
+      排序可支持多个字段排序，
+      * 例子：
+        ```json
+        {
+            "sort" : [
+                {"post_date" : { "order" : "asc"}},
+                "user",
+                { "name" : "desc" },
+                { "age" : "desc" },
+                "_score"
+            ],
+            "query" : {
+                "term" : { "user" : "kimchy" }
+            }
+        }
+        ```
+      因此，可以给出标准`sort`模型：
+        ```json
+        {
+            "sort":[
+                {"排序字段":{"排序属性":"属性值"}}
+            ]
+        }
+        ```
+      * 排序属性：
+        |属性名|说明|
+        |:-:|:-:|:-:|
+        |`order`|排序顺序|
+        |`mod`|排序模式（使用的排序值）|
+        |`nested`|嵌套排序指定|
+        |`missing`|缺少的值，该API用于指定如何处理缺少该字段的文档，可将值设定为默认或自定义值（制定的值将用于排序值）|
+        |`_script`|用于接收自定义脚本作为排序方法|
+        属性的具体说明：
+        1. ***`order`***
+          用于指定字段的排序顺序的选项，有两个属性值：
+            * `asc`： 升序排序
+            * `desc`：降序排序
+
+            若不指定该属性，则默认为asc
+            给出一个例子：
+            ```json
+            {
+                "query":{
+                    "term":{"key_1":"value"}
+                },
+                "sort":{
+                    "key_sort":{
+                        "order":"asc",
+                        "mode":"avg"
+                    }
+                }
+            }
+            ```
+            *注：例子中连用了`mod`属性，将在下面说明*
+        2. ***`mod`***
+          用于指定排序模式的选项，可选的属性值：
+            |属性值|说明|
+            |:-:|:-:|
+            |`min`|取最小值|
+            |`max`|取最大值|
+            |`sum`|使用所有值的总和作为排序值。只适用于数字数组类型字段|
+            |`avg`|使用平均值作为排序值。只适用于数字数组类型字段|
+            |`median`|使用终点值作为排序值(集合取查询集)。只适用于数字数组类型字段|
+        3. ***`nested`***
+          用于给多嵌套指定位置的值
+            * *注意*：`nested`不仅仅是`sort`专用的属性。实际上，在文档中包含多嵌套关系的情况下，不管是`query`查询、`sort`排序还是`aggs`，该属性都是不可或缺的。原因是在ES中，若不指定嵌套索引`nested`，只依靠动态映射，则多嵌套会被自动建立成为一个`object`，其中的内容会被扁平化成为key-value键值对形式。例如对于文档：
+              ```json
+              {
+                "title": "Nest eggs",
+                "body":  "Making your money work...",
+                "tags":  [ "cash", "shares" ],
+                "comments": [ <1>
+                  {
+                    "name":    "John Smith",
+                    "comment": "Great article",
+                    "age":     28,
+                    "stars":   4,
+                    "date":    "2014-09-01"
+                  },
+                  {
+                    "name":    "Alice White",
+                    "comment": "More like this please",
+                    "age":     31,
+                    "stars":   5,
+                    "date":    "2014-10-22"
+                  }
+                ]
               }
+              ```
+              在扁平化后，该文档被转换成：
+              ```json
+              {
+                "title":            [ eggs, nest ],
+                "body":             [ making, money, work, your ],
+                "tags":             [ cash, shares ],
+                "comments.name":    [ alice, john, smith, white ],
+                "comments.comment": [ article, great, like, more, please, this ],
+                "comments.age":     [ 28, 31 ],
+                "comments.stars":   [ 4, 5 ],
+                "comments.date":    [ 2014-09-01, 2014-10-22 ]
+              }
+              ```
+              在这种扁平化处理后，嵌套文档中的关联顺序已经完全消失，因此文档<1>会匹配这种搜索：
+              ```json
+              {
+                "query": {
+                  "bool": {
+                    "must": [
+                      { "match": { "name": "Alice" }},
+                      { "match": { "age":  28      }} <1>
+                    ]
+                  }
+                }
+              }
+              ```
+              这显然是不可容忍的。
+              对于这种有嵌套关系的文档，我们要么重新构建索引规则并用新规则索引化，要么指定嵌套路径。
+              对于上面的例子重新索引化：
+              ```json
+              {
+                "mappings": {
+                  "blogpost": {
+                    "properties": {
+                      "comments": {
+                        "type": "nested", <1>
+                        "properties": {
+                          "name":    { "type": "string"  },
+                          "comment": { "type": "string"  },
+                          "age":     { "type": "short"   },
+                          "stars":   { "type": "short"   },
+                          "date":    { "type": "date"    }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              ```
+              在重新索引化后，每个嵌套对象被索引化为一个隐藏的分割文档：
+              ```json
+              { <1>
+                "comments.name":    [ john, smith ],
+                "comments.comment": [ article, great ],
+                "comments.age":     [ 28 ],
+                "comments.stars":   [ 4 ],
+                "comments.date":    [ 2014-09-01 ]
+              }
+              { <2>
+                "comments.name":    [ alice, white ],
+                "comments.comment": [ like, more, please, this ],
+                "comments.age":     [ 31 ],
+                "comments.stars":   [ 5 ],
+                "comments.date":    [ 2014-10-22 ]
+              }
+              { <3>
+                "title":            [ eggs, nest ],
+                "body":             [ making, money, work, your ],
+                "tags":             [ cash, shares ]
+              }
+              ```
+              *注*：
+              * <1>第一个嵌套对象
+              * <2>第二个嵌套对象
+              * <3>根或父文档
+
+              但是，由于是隐藏的文档，是无法直接访问的。想要访问这种对象，需要使用`nested`查询或`nested`过滤器。这里给出3个查询API对应的例子：
+              1.查询`query`:
+                ```json
+                {
+                  "query": {
+                    "bool": {
+                      "must": [
+                        { "match": { "title": "eggs" }},
+                        {
+                          "nested": {
+                            "path": "comments",
+                            "score_mode": "max",
+                            "query": {
+                              "bool": {
+                                "must": [
+                                  { "match": { "comments.name": "john" }},
+                                  { "match": { "comments.age":  28     }}
+                                ]
+                        }}}}
+                      ]
+                }}}
+                ```
+              2.排序`sort`：
+              ```json
+              {
+                "query": {
+                  "nested": { <1>
+                    "path": "comments",
+                    "filter": {
+                      "range": {
+                        "comments.date": {
+                          "gte": "2014-10-01",
+                          "lt":  "2014-11-01"
+                        }
+                      }
+                    }
+                  }
+                },
+                "sort": {
+                  "comments.stars": { <2>
+                    "order": "asc",   <2>
+                    "mode":  "min",   <2>
+                    "nested_filter": { <3>
+                      "range": {
+                        "comments.date": {
+                          "gte": "2014-10-01",
+                          "lt":  "2014-11-01"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              ```
+              解释：
+              * <1>限定10月
+              * <2>结果在所有匹配的回应中依照comment.stars栏位的最小值(min)作递增(asc)的排序。
+              * <3>排序条件中的nested_filter与主查询query条件中的nested查询相同。
+              为什么我们要在nested_filter重复写上查询条件？ 原因是排序在於执行查询后才发生。 此查询匹配了在十月中有收到回应的blog文章，回传blog文章文档作为结果。 如果我们不加上nested_filter条件，我们最後会依照任何blog文章曾经收到过的回应作排序，而不是在十月份收到的。
+
+              3.聚合`aggs`:
+              ```json
+              {
+                "aggs": {
+                  "comments": { <1>
+                    "nested": {
+                      "path": "comments"
+                    },
+                    "aggs": {
+                      "by_month": {
+                        "date_histogram": { <2>
+                          "field":    "comments.date",
+                          "interval": "month",
+                          "format":   "yyyy-MM"
+                        },
+                        "aggs": {
+                          "avg_stars": {
+                            "avg": { <3>
+                              "field": "comments.stars"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+              ```
+              解释：
+              * <1> nested集合深入嵌套对象的comments栏位
+              * <2> 评论基於comments.date栏位被分至各个月份分段
+              * <3> 每个月份分段单独计算星号的平均数
+        4. ***`missing`***
+            用于处理在排序条件不存在的文档，有3个可选的属性：
+            * `_last`:最小值
+            * `_first`:最大值
+            * 自选值
+            给出例子：
+            ```json
+            {
+                "sort" : [
+                    { "price" : {"missing" : "_last"} }
+                ],
+                "query" : {
+                    "term" : { "product" : "chocolate" }
+                }
+            }
+            ```
+        5. ***`_script`***
+            脚本排序，给出例子：
+            ```json
+            {
+                "query" : {
+                    "term" : { "user" : "kimchy" }
+                },
+                "sort" : {
+                    "_script" : {
+                        "type" : "number",
+                        "script" : {
+                            "lang": "painless",
+                            "source": "doc['field_name'].value * params.factor",
+                            "params" : {
+                                "factor" : 1.1
+                            }
+                        },
+                        "order" : "asc"
+                    }
+                }
+            }
+            ```
+    * `aggs`聚合API
+        用于生成聚合的api
+        在ES中，有很多不同类型的聚合。通常可以分成4类：
+        * `Bucketing`：桶聚合，最基本的聚合。每个桶都与一个key和一个文档条件相关联，可以形象的理解为：当文档满足聚合条件时，该文档就会落入这个聚合条件所规定的桶内。
+        * `Mertic`：度量聚合，在文档中通过对某一度量的跟踪和计算来达到聚合目的
+        * `Martix`：矩阵聚合，度量聚合的高维形式，通过在文档的多个字段上的计算和跟踪，生成矩阵达到聚合目的
+        * `Pipeline`：管道聚合，通过接收其他聚合的输出及其关联的度量值的聚合
+
+      说明：聚合本质意义实际上是在全文或索引化后的文档集中，单独取出一部分满足条件的文档集的操作，所以其取出的实体是一个集合。因此可以对其进行二次或者嵌套聚合。`ES的嵌套聚合的级别和深度没有限制`
+
+      --------
+      构造聚合的基本结构：
+      ```json
+      "aggregations" : {
+          "<aggregation_name>" : {
+              "<aggregation_type>" : {
+                  <aggregation_body>
+              }
+              [,"meta" : {  [<meta_data_body>] } ]?
+              [,"aggregations" : { [<sub_aggregation>]+ } ]?
           }
+          [,"<aggregation_name_2>" : { ... } ]*
       }
       ```
+      由于聚合过于复杂，且过于特化应用场景，这里不在具体分类介绍，只列举一些例子
+      
+

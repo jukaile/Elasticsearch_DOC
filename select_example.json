@@ -1,0 +1,130 @@
+// 1、威胁事件分析：聚合搜索获取max_min 时间。搜索条件确认为以前的md5为事件的唯一标识
+//POST /data_alert/doc/_search
+{
+  "size": 0,
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "match_all": {}
+        }
+      ],
+      "filter": [
+        {
+          "range": {
+            "timestamp": {
+              "gt": "now-24h"
+            }
+          }
+        }
+      ],
+      "should": [],
+      "must_not": []
+    }
+  },
+  "aggs": {
+    "fallhost": {
+      "terms": {
+        "field": "src_ip",
+        "size": 2147483647
+      },
+      "aggs": {
+        "max_time": {
+          "max": {
+            "field": "timestamp"
+          }
+        },
+        "min_time": {
+          "min": {
+            "field": "timestamp"
+          }
+        }
+      }
+    }
+  }
+}
+// 2、失陷主机分析
+// 例子1
+// POST /data_alert/doc/_search
+{
+  "size": 0,
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "match_all": {}
+        }
+      ],
+      "filter": {
+        "range": {
+          "timestamp": {
+            "gt": "now-1h"
+          }
+        }
+      },
+      "should": [],
+      "must_not": []
+    }
+  },
+  "aggs": {
+    "fallhost": {
+      "terms": {
+        "field": "src_ip",
+        "size": 2147483647
+      }
+    }
+  }
+}
+// 例子2
+// 时间- src_ip - 威胁类型 - 时间戳 - 威胁等级
+// POST /data_alert/doc/_search
+{
+  "size": 0,
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "match_all": {}
+        }
+      ],
+      "filter": [
+        {
+          "range": {
+            "timestamp": {
+              "gt": "now-24h"
+            }
+          }
+        }
+      ],
+      "should": [],
+      "must_not": []
+    }
+  },
+  "aggs": {
+    "fallhost": {
+      "terms": {
+        "field": "src_ip",
+        "size": 2147483647
+      },
+      "aggs": {
+        "cata": {
+          "terms": {
+            "field": "alert.signature.threattype"
+          },
+          "aggs": {
+            "min_time": {
+              "min": {
+                "field": "timestamp"
+              }
+            },
+            "severity2": {
+              "terms": {
+                "field": "alert.severity"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
